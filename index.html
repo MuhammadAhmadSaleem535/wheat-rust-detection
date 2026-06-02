@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WheatScan — Disease Detection</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --wheat:     #C8A96E;
+  --wheat-lt:  #E8D5A3;
+  --wheat-dk:  #8B6914;
+  --wheat-xdk: #5C4509;
+  --soil:      #0D0900;
+  --soil-1:    #181006;
+  --soil-2:    #231709;
+  --soil-3:    #2E1F0C;
+  --soil-4:    #3A2810;
+  --leaf-lt:   #52A032;
+  --rust-lt:   #E86030;
+  --amber:     #D4860A;
+  --text-1:    #F0E6CC;
+  --text-2:    #B89A6A;
+  --text-3:    #7A6040;
+  --border:    rgba(200,169,110,0.12);
+  --border-2:  rgba(200,169,110,0.28);
+  --border-3:  rgba(200,169,110,0.5);
+}
+
+html, body { min-height: 100vh; background: var(--soil); color: var(--text-1); font-family: 'DM Mono', monospace; overflow-x: hidden; }
+
+body::before {
+  content: ''; position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none; z-index: 0; opacity: 0.6;
+}
+
+.glow { position: fixed; border-radius: 50%; filter: blur(120px); pointer-events: none; z-index: 0; }
+.glow-1 { width: 600px; height: 600px; background: rgba(139,105,20,0.07); top: -200px; right: -100px; }
+.glow-2 { width: 400px; height: 400px; background: rgba(45,90,27,0.05); bottom: -100px; left: -100px; }
+
+.shell { position: relative; z-index: 1; min-height: 100vh; display: flex; flex-direction: column; }
+
+header {
+  display: flex; align-items: center; gap: 14px;
+  padding: 18px 40px;
+  border-bottom: 0.5px solid var(--border);
+  background: rgba(13,9,0,0.7);
+  backdrop-filter: blur(12px);
+  position: sticky; top: 0; z-index: 10;
+}
+.logo { width: 36px; height: 36px; background: linear-gradient(135deg, var(--wheat-dk), var(--wheat-xdk)); border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 18px; border: 0.5px solid var(--border-2); }
+.brand h1 { font-family: 'Fraunces', serif; font-size: 17px; font-weight: 600; color: var(--wheat-lt); letter-spacing: -0.01em; }
+.brand p { font-size: 9px; color: var(--text-3); letter-spacing: 0.18em; text-transform: uppercase; margin-top: 1px; }
+.header-right { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+.model-badge { font-size: 10px; color: var(--text-2); background: var(--soil-3); border: 0.5px solid var(--border); padding: 4px 11px; border-radius: 20px; letter-spacing: 0.06em; }
+.online { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--leaf-lt); }
+.pulse { width: 6px; height: 6px; background: var(--leaf-lt); border-radius: 50%; animation: pulseAnim 2s infinite; }
+@keyframes pulseAnim { 0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(82,160,50,0.4)} 50%{opacity:.5;box-shadow:0 0 0 4px rgba(82,160,50,0)} }
+
+main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 24px;
+  max-width: 1440px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 32px 40px;
+  align-items: start;
+}
+
+.panel { background: var(--soil-1); border: 0.5px solid var(--border); border-radius: 16px; overflow: hidden; }
+.panel-head { padding: 14px 18px; border-bottom: 0.5px solid var(--border); display: flex; align-items: center; gap: 10px; }
+.panel-head .ph-icon { font-size: 14px; color: var(--wheat-dk); }
+.panel-head .ph-title { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3); }
+.panel-head .ph-badge { margin-left: auto; font-size: 9px; color: var(--wheat); background: rgba(139,105,20,0.15); padding: 3px 8px; border-radius: 10px; letter-spacing: 0.08em; }
+.panel-body { padding: 18px; }
+
+.drop-zone {
+  border: 1.5px dashed var(--border-2); border-radius: 12px; min-height: 240px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; cursor: pointer; transition: all 0.25s; position: relative; overflow: hidden;
+  background: var(--soil-2);
+}
+.drop-zone:hover { border-color: var(--wheat); background: rgba(139,105,20,0.05); }
+.drop-zone.drag-over { border-color: var(--wheat); background: rgba(139,105,20,0.08); transform: scale(1.01); }
+.drop-zone.has-img { border-style: solid; border-color: var(--wheat-dk); }
+#preview { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 11px; display: none; }
+.preview-overlay { position: absolute; inset: 0; background: linear-gradient(to top, rgba(13,9,0,0.9) 0%, transparent 55%); display: none; border-radius: 11px; }
+.preview-chip { position: absolute; bottom: 12px; left: 12px; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--wheat-lt); background: rgba(13,9,0,0.7); padding: 3px 9px; border-radius: 20px; border: 0.5px solid var(--border-2); display: none; }
+.dz-inner { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.dz-icon { font-size: 32px; color: var(--wheat-dk); transition: transform 0.2s; }
+.drop-zone:hover .dz-icon { transform: translateY(-4px); }
+.dz-title { font-size: 12px; color: var(--text-2); }
+.dz-sub { font-size: 10px; color: var(--text-3); }
+.dz-sub span { color: var(--wheat); text-decoration: underline dotted; cursor: pointer; }
+
+.btn-analyze {
+  width: 100%; margin-top: 14px; padding: 13px; border: none; border-radius: 10px;
+  background: linear-gradient(135deg, var(--wheat-dk) 0%, #6B4E0A 100%);
+  color: var(--wheat-lt); font-family: 'DM Mono', monospace; font-size: 11px;
+  letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer; transition: all 0.2s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  border: 0.5px solid rgba(200,169,110,0.3);
+}
+.btn-analyze:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-1px); box-shadow: 0 8px 24px rgba(139,105,20,0.3); }
+.btn-analyze:active:not(:disabled) { transform: scale(0.98); }
+.btn-analyze:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-analyze.loading { animation: breathe 1.2s ease-in-out infinite; }
+@keyframes breathe { 0%,100%{opacity:1} 50%{opacity:.55} }
+.file-meta { margin-top: 8px; font-size: 10px; color: var(--text-3); text-align: center; }
+
+.result-block { background: var(--soil-2); border: 0.5px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 12px; opacity: 0.35; transition: all 0.4s cubic-bezier(0.4,0,0.2,1); }
+.result-block.active { opacity: 1; }
+.result-block.green.active  { border-color: rgba(82,160,50,0.35);  background: rgba(45,90,27,0.1); }
+.result-block.orange.active { border-color: rgba(212,134,10,0.35); background: rgba(212,134,10,0.06); }
+.result-block.red.active    { border-color: rgba(196,68,26,0.35);  background: rgba(196,68,26,0.07); }
+.rb-label { font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-3); margin-bottom: 8px; }
+.rb-value { font-family: 'Fraunces', serif; font-size: 24px; font-weight: 600; letter-spacing: -0.02em; color: var(--text-1); margin-bottom: 10px; transition: color 0.3s; }
+.rb-value.green  { color: var(--leaf-lt); }
+.rb-value.orange { color: var(--amber); }
+.rb-value.red    { color: var(--rust-lt); }
+.conf-row { display: flex; align-items: center; gap: 10px; }
+.conf-bar { flex: 1; height: 3px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; }
+.conf-fill { height: 100%; border-radius: 2px; width: 0; transition: width 0.9s cubic-bezier(0.4,0,0.2,1); }
+.conf-fill.green  { background: var(--leaf-lt); }
+.conf-fill.orange { background: var(--amber); }
+.conf-fill.red    { background: var(--rust-lt); }
+.conf-fill.wheat  { background: var(--wheat); }
+.conf-pct { font-size: 11px; color: var(--text-2); min-width: 36px; text-align: right; }
+
+.scores-panel { margin-top: 16px; background: var(--soil-2); border: 0.5px solid var(--border); border-radius: 12px; padding: 16px; opacity: 0.35; transition: opacity 0.4s; }
+.scores-panel.active { opacity: 1; }
+.scores-title { font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-3); margin-bottom: 12px; }
+.score-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.score-row:last-child { margin-bottom: 0; }
+.score-name { font-size: 10px; color: var(--text-2); width: 130px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.score-bar-wrap { flex: 1; height: 2px; background: rgba(255,255,255,0.05); border-radius: 2px; overflow: hidden; }
+.score-bar-fill { height: 100%; border-radius: 2px; background: var(--wheat-dk); transition: width 0.9s cubic-bezier(0.4,0,0.2,1); }
+.score-bar-fill.top { background: var(--wheat); }
+.score-pct { font-size: 10px; color: var(--text-3); min-width: 36px; text-align: right; }
+
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 36px 20px; opacity: 0.3; }
+.empty-icon { font-size: 28px; }
+.empty-text { font-size: 11px; color: var(--text-3); text-align: center; line-height: 1.8; }
+.error-msg { background: rgba(196,68,26,0.1); border: 0.5px solid rgba(196,68,26,0.3); border-radius: 8px; padding: 10px 14px; font-size: 11px; color: var(--rust-lt); margin-top: 10px; display: none; }
+
+.chat-col { display: flex; flex-direction: column; }
+.chat-panel { display: flex; flex-direction: column; height: 640px; }
+.chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; scroll-behavior: smooth; }
+.chat-messages::-webkit-scrollbar { width: 4px; }
+.chat-messages::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 2px; }
+.chat-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; opacity: 0.3; text-align: center; padding: 20px; }
+.chat-empty-icon { font-size: 28px; }
+.chat-empty-text { font-size: 11px; color: var(--text-3); line-height: 1.8; }
+
+.msg { display: flex; flex-direction: column; gap: 4px; animation: fadeUp 0.3s ease; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.msg-role { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-3); }
+.msg-role.ai { color: var(--wheat-dk); }
+.msg-bubble { padding: 12px 14px; border-radius: 10px; font-size: 12px; line-height: 1.7; }
+.msg-bubble.user { background: var(--soil-3); border: 0.5px solid var(--border-2); color: var(--text-1); border-radius: 10px 10px 3px 10px; }
+.msg-bubble.ai { background: rgba(139,105,20,0.08); border: 0.5px solid rgba(139,105,20,0.2); color: var(--text-1); border-radius: 10px 10px 10px 3px; }
+.msg-bubble.ai p { margin-bottom: 8px; }
+.msg-bubble.ai p:last-child { margin-bottom: 0; }
+.msg-bubble.ai strong { color: var(--wheat-lt); font-weight: 500; }
+.msg-bubble.ai ul { padding-left: 16px; margin: 6px 0; }
+.msg-bubble.ai li { margin-bottom: 4px; }
+.msg-bubble.typing { display: flex; align-items: center; gap: 5px; padding: 14px 16px; }
+.dot { width: 5px; height: 5px; background: var(--wheat-dk); border-radius: 50%; animation: dotBounce 1.2s infinite; }
+.dot:nth-child(2) { animation-delay: 0.2s; }
+.dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dotBounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
+
+.chat-suggestions { padding: 0 16px 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.suggestion-chip { font-size: 10px; color: var(--text-2); background: var(--soil-3); border: 0.5px solid var(--border-2); padding: 5px 10px; border-radius: 20px; cursor: pointer; transition: all 0.2s; letter-spacing: 0.04em; white-space: nowrap; }
+.suggestion-chip:hover { border-color: var(--wheat); color: var(--wheat-lt); background: rgba(139,105,20,0.1); }
+
+.chat-input-row { padding: 12px 16px; border-top: 0.5px solid var(--border); display: flex; gap: 8px; align-items: flex-end; background: var(--soil-2); }
+#chatInput { flex: 1; background: var(--soil-3); border: 0.5px solid var(--border-2); border-radius: 10px; padding: 10px 14px; color: var(--text-1); font-family: 'DM Mono', monospace; font-size: 12px; resize: none; outline: none; min-height: 42px; max-height: 100px; line-height: 1.5; transition: border-color 0.2s; }
+#chatInput:focus { border-color: var(--wheat-dk); }
+#chatInput::placeholder { color: var(--text-3); }
+#chatInput:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-send { width: 42px; height: 42px; flex-shrink: 0; background: var(--wheat-dk); border: none; border-radius: 10px; color: var(--wheat-lt); font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+.btn-send:hover:not(:disabled) { background: #A07A1A; transform: scale(1.05); }
+.btn-send:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.api-key-banner { margin: 12px 16px 0; background: rgba(139,105,20,0.08); border: 0.5px solid var(--border-2); border-radius: 10px; padding: 12px 14px; display: flex; gap: 8px; align-items: center; }
+.api-key-banner input { flex: 1; background: var(--soil-3); border: 0.5px solid var(--border-2); border-radius: 7px; padding: 7px 12px; color: var(--text-1); font-family: 'DM Mono', monospace; font-size: 11px; outline: none; transition: border-color 0.2s; }
+.api-key-banner input:focus { border-color: var(--wheat-dk); }
+.api-key-banner input::placeholder { color: var(--text-3); }
+.btn-key-save { padding: 7px 14px; background: var(--wheat-dk); border: none; border-radius: 7px; color: var(--wheat-lt); font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.1em; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+.btn-key-save:hover { filter: brightness(1.15); }
+.key-label { font-size: 10px; color: var(--text-3); white-space: nowrap; }
+
+.spinner { width: 13px; height: 13px; border: 1.5px solid rgba(232,213,163,0.2); border-top-color: var(--wheat-lt); border-radius: 50%; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+footer { border-top: 0.5px solid var(--border); padding: 12px 40px; display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: var(--text-3); letter-spacing: 0.06em; background: rgba(13,9,0,0.5); }
+.footer-right { display: flex; gap: 20px; }
+#file-input { display: none; }
+
+@media (max-width: 1100px) {
+  main { grid-template-columns: 1fr 1fr; }
+  .chat-col { grid-column: 1 / -1; }
+  .chat-panel { height: 500px; }
+}
+@media (max-width: 700px) {
+  main { grid-template-columns: 1fr; padding: 20px; }
+  header { padding: 14px 20px; }
+  .model-badge { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="glow glow-1"></div>
+<div class="glow glow-2"></div>
+
+<div class="shell">
+  <header>
+    <div class="logo">🌾</div>
+    <div class="brand">
+      <h1>WheatScan</h1>
+      <p>AI Disease Detection System</p>
+    </div>
+    <div class="header-right">
+      <span class="model-badge">ResNet18 + MobileNetV3</span>
+      <div class="online"><div class="pulse"></div>Model ready</div>
+    </div>
+  </header>
+
+  <main>
+    <!-- COL 1: UPLOAD -->
+    <div>
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-icon">⬆</span>
+          <span class="ph-title">Upload wheat image</span>
+        </div>
+        <div class="panel-body">
+          <div class="drop-zone" id="dropZone">
+            <img id="preview" alt="Preview">
+            <div class="preview-overlay" id="previewOverlay"></div>
+            <div class="preview-chip" id="previewChip">Image loaded ✓</div>
+            <div class="dz-inner" id="dzInner">
+              <div class="dz-icon">🌿</div>
+              <div class="dz-title">Drop image here</div>
+              <div class="dz-sub">or <span onclick="document.getElementById('file-input').click()">browse files</span></div>
+            </div>
+          </div>
+          <div class="file-meta" id="fileMeta">Accepts JPG · PNG · WEBP</div>
+          <div class="error-msg" id="errorMsg"></div>
+          <button class="btn-analyze" id="analyzeBtn" disabled onclick="analyze()">
+            <span id="btnIcon">⟳</span>
+            <span id="btnText">Analyze image</span>
+          </button>
+        </div>
+      </div>
+      <div style="margin-top:16px">
+        <div class="scores-panel" id="scoresPanel">
+          <div class="scores-title">All class probabilities</div>
+          <div id="scoreRows"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COL 2: RESULTS -->
+    <div>
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-icon">◈</span>
+          <span class="ph-title">Detection results</span>
+        </div>
+        <div class="panel-body">
+          <div class="result-block" id="diseaseBlock">
+            <div class="rb-label">Disease detected</div>
+            <div class="rb-value" id="diseaseVal">—</div>
+            <div class="conf-row">
+              <div class="conf-bar"><div class="conf-fill wheat" id="diseaseBar"></div></div>
+              <div class="conf-pct" id="diseaseConf">—</div>
+            </div>
+          </div>
+          <div class="result-block" id="severityBlock">
+            <div class="rb-label">Severity level</div>
+            <div class="rb-value" id="severityVal">—</div>
+            <div class="conf-row">
+              <div class="conf-bar"><div class="conf-fill wheat" id="severityBar"></div></div>
+              <div class="conf-pct" id="severityConf">—</div>
+            </div>
+          </div>
+          <div class="empty-state" id="emptyState">
+            <div class="empty-icon">🔬</div>
+            <div class="empty-text">Upload a wheat leaf image<br>to begin analysis</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COL 3: AI ADVISOR -->
+    <div class="chat-col">
+      <div class="chat-panel panel">
+        <div class="panel-head">
+          <span class="ph-icon">✦</span>
+          <span class="ph-title">AI Treatment Advisor</span>
+          <span class="ph-badge">OpenRouter</span>
+        </div>
+        <div class="api-key-banner" id="apiKeyBanner">
+          <span class="key-label">OpenRouter key</span>
+          <input type="password" id="apiKeyInput" placeholder="sk-or-...">
+          <button class="btn-key-save" onclick="saveKey()">Save</button>
+        </div>
+        <div class="chat-messages" id="chatMessages">
+          <div class="chat-empty" id="chatEmpty">
+            <div class="chat-empty-icon">🌱</div>
+            <div class="chat-empty-text">Run an analysis and I'll<br>give you treatment advice<br>automatically</div>
+          </div>
+        </div>
+        <div class="chat-suggestions" id="chatSuggestions" style="display:none"></div>
+        <div class="chat-input-row">
+          <textarea id="chatInput" placeholder="Ask about treatment, prevention, causes..." rows="1" disabled></textarea>
+          <button class="btn-send" id="sendBtn" onclick="sendChat()" disabled>➤</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <span>WheatScan · Wheat Disease Detection</span>
+    <div class="footer-right">
+      <span>ResNet18 · 15 classes</span>
+      <span>MobileNetV3 · severity</span>
+      <span>OpenRouter · advisor</span>
+    </div>
+  </footer>
+</div>
+
+<input type="file" id="file-input" accept="image/*">
+
+<script>
+let currentFile = null;
+let lastResult  = null;
+let apiKey      = localStorage.getItem('or_key') || '';
+let chatHistory = [];
+
+const dropZone      = document.getElementById('dropZone');
+const preview       = document.getElementById('preview');
+const previewOv     = document.getElementById('previewOverlay');
+const previewChip   = document.getElementById('previewChip');
+const dzInner       = document.getElementById('dzInner');
+const fileMeta      = document.getElementById('fileMeta');
+const analyzeBtn    = document.getElementById('analyzeBtn');
+const errorMsg      = document.getElementById('errorMsg');
+const emptyState    = document.getElementById('emptyState');
+const diseaseBlock  = document.getElementById('diseaseBlock');
+const severityBlock = document.getElementById('severityBlock');
+const scoresPanel   = document.getElementById('scoresPanel');
+const chatMessages  = document.getElementById('chatMessages');
+const chatInput     = document.getElementById('chatInput');
+const sendBtn       = document.getElementById('sendBtn');
+const chatEmpty     = document.getElementById('chatEmpty');
+const apiKeyBanner  = document.getElementById('apiKeyBanner');
+const chatSuggestions = document.getElementById('chatSuggestions');
+
+if (apiKey) apiKeyBanner.style.display = 'none';
+
+function saveKey() {
+  const val = document.getElementById('apiKeyInput').value.trim();
+  if (!val) return;
+  apiKey = val;
+  localStorage.setItem('or_key', val);
+  apiKeyBanner.style.display = 'none';
+  enableChat();
+}
+
+function showPreview(file) {
+  currentFile = file;
+  preview.src = URL.createObjectURL(file);
+  preview.style.display = 'block';
+  previewOv.style.display = 'block';
+  previewChip.style.display = 'block';
+  dzInner.style.display = 'none';
+  dropZone.classList.add('has-img');
+  fileMeta.textContent = file.name + '  ·  ' + (file.size / 1024).toFixed(0) + ' KB';
+  analyzeBtn.disabled = false;
+  errorMsg.style.display = 'none';
+}
+
+document.getElementById('file-input').addEventListener('change', e => { if (e.target.files[0]) showPreview(e.target.files[0]); });
+dropZone.addEventListener('click', () => { if (!currentFile) document.getElementById('file-input').click(); });
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) showPreview(f);
+});
+
+chatInput.addEventListener('input', () => {
+  chatInput.style.height = 'auto';
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 100) + 'px';
+});
+chatInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+});
+
+function colorClass(sev) {
+  if (!sev || sev === 'None' || sev === 'Healthy') return 'green';
+  if (sev === 'Moderate') return 'orange';
+  if (sev === 'Severe') return 'red';
+  return 'wheat';
+}
+
+function setLoading(on) {
+  analyzeBtn.disabled = on;
+  analyzeBtn.classList.toggle('loading', on);
+  document.getElementById('btnIcon').innerHTML = on ? '<div class="spinner"></div>' : '⟳';
+  document.getElementById('btnText').textContent = on ? 'Analyzing...' : 'Analyze again';
+}
+
+function renderScores(scores, topClass) {
+  const rows = document.getElementById('scoreRows');
+  rows.innerHTML = '';
+  Object.entries(scores).sort((a,b) => b[1]-a[1]).forEach(([cls, pct]) => {
+    const isTop = cls === topClass;
+    const row = document.createElement('div');
+    row.className = 'score-row';
+    row.innerHTML = `<div class="score-name" title="${cls}">${cls}</div>
+      <div class="score-bar-wrap"><div class="score-bar-fill${isTop?' top':''}" style="width:0%" data-w="${pct}"></div></div>
+      <div class="score-pct">${pct.toFixed(1)}%</div>`;
+    rows.appendChild(row);
+  });
+  scoresPanel.classList.add('active');
+  requestAnimationFrame(() => {
+    scoresPanel.querySelectorAll('.score-bar-fill').forEach(el => { el.style.width = el.dataset.w + '%'; });
+  });
+}
+
+async function analyze() {
+  if (!currentFile) return;
+  setLoading(true);
+  errorMsg.style.display = 'none';
+  emptyState.style.display = 'none';
+
+  const fd = new FormData();
+  fd.append('image', currentFile);
+
+  try {
+    const res  = await fetch('/predict', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    lastResult = data;
+    const isHealthy = data.disease === 'Healthy';
+    const disColor  = isHealthy ? 'green' : 'red';
+    const sevColor  = colorClass(data.severity);
+
+    diseaseBlock.className = `result-block ${disColor} active`;
+    document.getElementById('diseaseVal').textContent = data.disease;
+    document.getElementById('diseaseVal').className   = `rb-value ${disColor}`;
+    document.getElementById('diseaseBar').style.width  = data.disease_confidence + '%';
+    document.getElementById('diseaseBar').className   = `conf-fill ${disColor}`;
+    document.getElementById('diseaseConf').textContent = data.disease_confidence.toFixed(1) + '%';
+
+    severityBlock.className = `result-block ${sevColor} active`;
+    document.getElementById('severityVal').textContent = data.severity;
+    document.getElementById('severityVal').className   = `rb-value ${sevColor}`;
+    if (data.severity_confidence !== null && data.severity !== 'None') {
+      document.getElementById('severityBar').style.width  = data.severity_confidence + '%';
+      document.getElementById('severityBar').className   = `conf-fill ${sevColor}`;
+      document.getElementById('severityConf').textContent = data.severity_confidence.toFixed(1) + '%';
+    } else {
+      document.getElementById('severityBar').style.width = '0%';
+      document.getElementById('severityConf').textContent = 'N/A';
+    }
+
+    if (data.all_disease_scores) renderScores(data.all_disease_scores, data.disease);
+
+    if (apiKey) {
+      triggerAutoAdvice(data);
+      enableChat();
+    } else {
+      apiKeyBanner.style.display = 'flex';
+    }
+
+  } catch (err) {
+    errorMsg.textContent = '⚠ ' + (err.message || 'Prediction failed.');
+    errorMsg.style.display = 'block';
+    emptyState.style.display = 'flex';
+  }
+
+  setLoading(false);
+}
+
+function enableChat() {
+  chatInput.disabled = false;
+  sendBtn.disabled = false;
+  chatInput.focus();
+}
+
+function appendMsg(role, html, isTyping = false) {
+  chatEmpty.style.display = 'none';
+  const wrap = document.createElement('div');
+  wrap.className = 'msg';
+  const roleEl = document.createElement('div');
+  roleEl.className = `msg-role ${role === 'ai' ? 'ai' : ''}`;
+  roleEl.textContent = role === 'ai' ? 'Advisor' : 'You';
+  const bubble = document.createElement('div');
+  bubble.className = `msg-bubble ${role}${isTyping ? ' typing' : ''}`;
+  if (isTyping) {
+    bubble.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
+  } else {
+    bubble.innerHTML = html;
+  }
+  wrap.appendChild(roleEl);
+  wrap.appendChild(bubble);
+  chatMessages.appendChild(wrap);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  return { wrap, bubble };
+}
+
+function formatAIText(text) {
+  return text
+    .replace(/\|.*\|/g, '')
+    .replace(/[-|]{3,}/g, '')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/^#{1,3} (.*$)/gm, '<strong>$1</strong>')
+    .replace(/^\* (.*$)/gm, '<li>$1</li>')
+    .replace(/^- (.*$)/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
+    .split('\n\n').map(p => p.trim() ? `<p>${p}</p>` : '').join('')
+    .replace(/<p>\s*<\/p>/g, '');
+}
+
+function showSuggestions(disease) {
+  const chips = disease === 'Healthy'
+    ? ['How to keep wheat healthy?', 'Preventive measures', 'Best soil practices']
+    : ['What fungicides work best?', 'Organic treatment options', 'How quickly does it spread?', 'When to harvest early?'];
+  chatSuggestions.innerHTML = chips.map(s =>
+    `<div class="suggestion-chip" onclick="sendSuggestion('${s}')">${s}</div>`
+  ).join('');
+  chatSuggestions.style.display = 'flex';
+}
+
+function sendSuggestion(text) {
+  chatInput.value = text;
+  sendChat();
+}
+
+async function triggerAutoAdvice(result) {
+  chatHistory = [];
+  chatMessages.innerHTML = '';
+  chatEmpty.style.display = 'none';
+
+  const prompt = result.disease === 'Healthy'
+    ? `A wheat plant scan came back healthy with ${result.disease_confidence}% confidence. Give brief, practical advice on maintaining wheat health and preventing common diseases.`
+    : `A wheat plant has been diagnosed with **${result.disease}** at **${result.severity}** severity (confidence: ${result.disease_confidence}%). Please provide:
+1. A brief explanation of this disease
+2. Immediate treatment steps
+3. Recommended fungicides or treatments
+4. Preventive measures for future crops
+Keep it practical and actionable for a farmer.`;
+
+  await callAI(prompt);
+  showSuggestions(result.disease);
+}
+
+async function sendChat() {
+  const text = chatInput.value.trim();
+  if (!text || !apiKey) return;
+  chatInput.value = '';
+  chatInput.style.height = 'auto';
+  chatSuggestions.style.display = 'none';
+  appendMsg('user', text);
+
+  const context = lastResult
+    ? `Context: wheat plant diagnosed with ${lastResult.disease} (${lastResult.disease_confidence}% confidence), severity: ${lastResult.severity}. User question: `
+    : '';
+
+  await callAI(context + text);
+}
+
+async function callAI(prompt) {
+  const { bubble: typingBubble } = appendMsg('ai', '', true);
+
+  // Build messages for OpenRouter (standard OpenAI format)
+  const messages = [
+    {
+      role: 'system',
+      content: 'You are a wheat disease expert advising farmers. Be concise — max 4-5 sentences or a short bullet list. No tables. No long explanations. Plain practical advice only.'
+    },
+    ...chatHistory.map(m => ({
+      role: m.role === 'model' ? 'assistant' : 'user',
+      content: m.parts[0].text
+    })),
+    { role: 'user', content: prompt }
+  ];
+
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': 'http://localhost:5000',
+        'X-Title': 'WheatScan'
+      },
+      body: JSON.stringify({
+        model: 'openai/gpt-oss-120b:free',
+        messages,
+        max_tokens: 600,
+        temperature: 0.7
+      })
+    });
+
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message);
+
+    const reply = data.choices?.[0]?.message?.content || 'No response.';
+
+    // Save to history
+    chatHistory.push({ role: 'user',  parts: [{ text: prompt }] });
+    chatHistory.push({ role: 'model', parts: [{ text: reply  }] });
+    if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
+
+    typingBubble.classList.remove('typing');
+    typingBubble.innerHTML = formatAIText(reply);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    showSuggestions(lastResult?.disease || '');
+
+  } catch (err) {
+    typingBubble.classList.remove('typing');
+    typingBubble.innerHTML = `<p style="color:var(--rust-lt)">⚠ ${err.message || 'API error. Check your OpenRouter key.'}</p>`;
+  }
+}
+</script>
+</body>
+</html>
