@@ -1,21 +1,21 @@
-# 🌾 Wheat Disease Detection and Severity Estimation
+#  Wheat Disease Detection and Severity Estimation
 
-## 📌 Overview
+## Overview
 
 This project is a deep learning-based system designed to detect wheat diseases from leaf images and estimate their severity. It provides an end-to-end pipeline that identifies the disease type, evaluates how severe the infection is, and generates useful recommendations for crop management.
 
 ---
 
-## 🚀 Features
+##  Features
 
-* 🌿 Multi-class wheat disease classification (**15 classes + healthy**)
-* ⚠️ Severity estimation:
+*  Multi-class wheat disease classification (**15 classes + healthy**)
+*  Severity estimation:
 
   * Moderate
   * Severe
-* 📊 Confidence scores for predictions
-* 🤖 AI-based treatment and recommendation system
-* 💻 Simple and user-friendly interface
+*  Confidence scores for predictions
+*  AI-based treatment and recommendation system
+*  Simple and user-friendly interface
 
 ---
 
