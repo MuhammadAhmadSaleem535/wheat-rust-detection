@@ -3,135 +3,89 @@ import torch.nn as nn
 from torchvision import models, transforms
 from PIL import Image
 
-# -----------------------------
-# 1. Load Models
-# -----------------------------
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-device = torch.device("cpu")
+disease_classes = [
+    "Aphid",
+    "Black Rust",
+    "Blast",
+    "Brown Rust",
+    "Common Root Rot",
+    "Fusarium Head Blight",
+    "Healthy",
+    "Leaf Blight",
+    "Mildew",
+    "Mite",
+    "Septoria",
+    "Smut",
+    "Stem fly",
+    "Tan spot",
+    "Yellow Rust"
+]
 
-# Rust classification model
-rust_model = models.resnet18(pretrained=False)
-rust_model.fc = nn.Linear(rust_model.fc.in_features, 4)
-rust_model.load_state_dict(torch.load("rust_model.pth", map_location=device))
-rust_model.eval()
+severity_classes = ["Moderate", "Severe"]
 
-# Severity model
-severity_model = models.resnet18(pretrained=False)
-severity_model.fc = nn.Linear(severity_model.fc.in_features, 2)
-severity_model.load_state_dict(torch.load("severity_model.pth", map_location=device))
+disease_model = models.resnet18(weights=None)
+disease_model.fc = nn.Linear(disease_model.fc.in_features, 15)
+disease_model.load_state_dict(
+    torch.load("best_disease_model.pth", map_location=device, weights_only=True)
+)
+disease_model.to(device)
+disease_model.eval()
+
+severity_model = models.mobilenet_v3_small(weights=None)
+severity_model.classifier[3] = nn.Linear(
+    severity_model.classifier[3].in_features, 2
+)
+severity_model.load_state_dict(
+    torch.load("best_severity_model.pth", map_location=device, weights_only=True)
+)
+severity_model.to(device)
 severity_model.eval()
-
-# -----------------------------
-# 2. Class Labels
-# -----------------------------
-
-rust_classes = ["black_rust", "brown_rust", "healthy", "yellow_rust"]
-severity_classes = ["moderate", "severe"]
-
-# -----------------------------
-# 3. Preprocessing
-# -----------------------------
 
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
-    transforms.ToTensor()
+    transforms.ToTensor(),
+    transforms.Normalize([0.485, 0.456, 0.406],
+                         [0.229, 0.224, 0.225])
 ])
 
-# -----------------------------
-# 4. Recommendation System
-# -----------------------------
+def predict(image_path):
+    image  = Image.open(image_path).convert("RGB")
+    tensor = transform(image).unsqueeze(0).to(device)
 
-def get_recommendation(rust, severity):
-    recommendations = {
-        "black_rust": {
-            "moderate": {
-                "action": "Apply systemic fungicide (triazole-based) at recommended dose.",
-                "monitoring": "Inspect field every 3–5 days for spread.",
-                "notes": "Ensure proper field sanitation and avoid excess irrigation.",
-                "urgency": "medium"
-            },
-            "severe": {
-                "action": "Immediate fungicide application required. Repeat spray cycle if necessary.",
-                "monitoring": "Monitor neighboring plants closely and isolate heavily infected areas.",
-                "notes": "Severe stem rust can significantly reduce yield.",
-                "urgency": "high"
-            }
-        },
-        "brown_rust": {
-            "moderate": {
-                "action": "Apply preventive fungicide and maintain crop health.",
-                "monitoring": "Regularly check leaves for increase in infection.",
-                "notes": "Common disease; manage before it spreads widely.",
-                "urgency": "medium"
-            },
-            "severe": {
-                "action": "Apply systemic fungicide across affected area.",
-                "monitoring": "Reassess after 5–7 days and consider reapplication.",
-                "notes": "Heavy infection can reduce photosynthesis.",
-                "urgency": "high"
-            }
-        },
-        "yellow_rust": {
-            "moderate": {
-                "action": "Apply fungicide early to prevent rapid spread.",
-                "monitoring": "Check for stripe formation on leaves.",
-                "notes": "Spreads quickly in cool and moist conditions.",
-                "urgency": "medium"
-            },
-            "severe": {
-                "action": "Urgent fungicide application across the field.",
-                "monitoring": "Frequent monitoring required due to rapid spread.",
-                "notes": "Can spread very quickly under favorable conditions.",
-                "urgency": "high"
-            }
-        },
-        "healthy": {
-            "moderate": {
-                "action": "No treatment required.",
-                "monitoring": "Continue regular field inspection.",
-                "notes": "Maintain good agricultural practices.",
-                "urgency": "low"
-            },
-            "severe": {
-                "action": "No treatment required.",
-                "monitoring": "Continue regular field inspection.",
-                "notes": "Plant appears healthy.",
-                "urgency": "low"
-            }
+    with torch.no_grad():
+        disease_probs = torch.softmax(disease_model(tensor), dim=1)[0]
+        disease_pred  = torch.argmax(disease_probs).item()
+        disease_conf  = round(float(disease_probs[disease_pred]) * 100, 1)
+
+    disease_name = disease_classes[disease_pred]
+
+    if disease_name == "Healthy":
+        return {
+            "Disease":            "Healthy",
+            "Disease Confidence": disease_conf,
+            "Severity":           "None",
+            "Severity Confidence": None
         }
+
+    with torch.no_grad():
+        severity_probs = torch.softmax(severity_model(tensor), dim=1)[0]
+        severity_pred  = torch.argmax(severity_probs).item()
+        severity_conf  = round(float(severity_probs[severity_pred]) * 100, 1)
+
+    return {
+        "Disease":             disease_name,
+        "Disease Confidence":  disease_conf,
+        "Severity":            severity_classes[severity_pred],
+        "Severity Confidence": severity_conf
     }
 
-    return recommendations[rust][severity]
-    
-
-# -----------------------------
-# 5. Prediction Pipeline
-# -----------------------------
-
-def predict(image_path):
-    # Load image
-    image = Image.open(image_path).convert("RGB")
-    image = transform(image).unsqueeze(0)
-
-    # Rust prediction
-    with torch.no_grad():
-        rust_output = rust_model(image)
-        _, rust_pred = torch.max(rust_output, 1)
-        rust = rust_classes[rust_pred.item()]
-
-    # Severity prediction
-    with torch.no_grad():
-        severity_output = severity_model(image)
-        _, severity_pred = torch.max(severity_output, 1)
-        severity = severity_classes[severity_pred.item()]
-
-    # Recommendation
-    recommendation = get_recommendation(rust, severity)
-
-    return rust, severity, recommendation
-
-
-
-print("Disease:", rust)
-print("Severity:", severity)
-print("Recommendation:", recommendation)
+if __name__ == "__main__":
+    result = predict("test.jpg")
+    print("\n===== RESULT =====")
+    print(f"Disease             : {result['Disease']}")
+    print(f"Disease Confidence  : {result['Disease Confidence']}%")
+    print(f"Severity            : {result['Severity']}")
+    if result['Severity Confidence']:
+        print(f"Severity Confidence : {result['Severity Confidence']}%")
